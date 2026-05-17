@@ -1,0 +1,16 @@
+{
+  "name": "কৃষি AI v2",
+  "short_name": "কৃষি AI",
+  "description": "AI-চালিত কৃষি পরামর্শ সেবা — Krishi AI Bangladesh",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#16a34a",
+  "background_color": "#f0fdf4",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
