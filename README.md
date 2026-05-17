@@ -1,1 +1,0 @@
-# krishiai-v2
