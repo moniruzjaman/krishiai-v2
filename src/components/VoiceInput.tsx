@@ -86,7 +86,8 @@ export function VoiceInput({ onTranscript, disabled = false, className }: VoiceI
     }
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      console.error("Speech recognition error:", event.error)
+      const safeError = String(event.error).replace(/[\r\n]/g, ' ')
+      console.error("Speech recognition error:", safeError)
       setIsListening(false)
       if (event.error === "not-allowed") {
         setSpeechSupported(false)

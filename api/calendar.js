@@ -248,7 +248,8 @@ function getCropKey(crop) {
 
 // ---------- Fetch from GEMS API ----------
 async function fetchGemsCalendar(lat, lon, crop) {
-  const url = `https://gems.umn.edu/apis/crop-calendar?lat=${lat}&lon=${lon}&crop=${crop}`;
+  const params = new URLSearchParams({ lat: String(lat), lon: String(lon), crop });
+  const url = `https://gems.umn.edu/apis/crop-calendar?${params}`;
 
   const response = await fetch(url, {
     headers: { 'Accept': 'application/json' },
@@ -307,23 +308,28 @@ export default async function handler(req, res) {
     const latitude = parseFloat(lat);
     const longitude = parseFloat(lon);
 
-    if (isNaN(latitude) || isNaN(longitude)) {
+    if (isNaN(latitude) || isNaN(longitude) ||
+        latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
       res.status(400).set(corsHeaders()).json({ error: 'Invalid lat/lon values.' });
       return;
     }
+
+    // Allowlist crop values
+    const ALLOWED_CROPS = new Set(['rice','aus','rice-aus','aus-rice','aman','rice-aman','aman-rice','boro','rice-boro','boro-rice','wheat','jute']);
+    const safeCrop = ALLOWED_CROPS.has(String(crop).toLowerCase().trim()) ? String(crop).toLowerCase().trim() : 'rice';
 
     let result;
     let source = 'gems';
 
     // Try GEMS API first
     try {
-      result = await fetchGemsCalendar(latitude, longitude, crop);
+      result = await fetchGemsCalendar(latitude, longitude, safeCrop);
     } catch (err) {
       console.error(`[calendar] GEMS API failed: ${err.message}, using static data`);
       source = 'static';
 
       // Fallback: static Bangladesh crop calendar
-      const cropKey = getCropKey(crop);
+      const cropKey = getCropKey(safeCrop);
       const calendar = STATIC_CROP_CALENDAR[cropKey];
 
       if (!calendar) {
