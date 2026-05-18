@@ -1,0 +1,21 @@
+{
+  "name": "কৃষি AI — Krishi AI Bangladesh",
+  "short_name": "কৃষি AI",
+  "description": "বাংলাদেশের কৃষকদের জন্য AI-চালিত কৃষি পরামর্শ সেবা",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f5f4",
+  "theme_color": "#14532d",
+  "lang": "bn",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ],
+  "categories": ["agriculture", "productivity"],
+  "screenshots": [],
+  "shortcuts": [
+    { "name": "পরামর্শ", "url": "/chat",     "description": "কৃষি পরামর্শ" },
+    { "name": "রোগ নির্ণয়", "url": "/disease", "description": "রোগ শনাক্ত করুন" },
+    { "name": "আবহাওয়া", "url": "/weather",  "description": "আবহাওয়া দেখুন" },
+    { "name": "বাজার মূল্য", "url": "/market",  "description": "দাম দেখুন" }
+  ]
+}

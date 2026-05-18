@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-bn: 'Hind Siliguri', 'Noto Serif Bengali', sans-serif;
+    --green-primary: #14532d;
+    --green-mid: #166534;
+    --green-light: #dcfce7;
+    --amber-accent: #d97706;
+    --earth: #78350f;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { font-family: var(--font-bn); }
+
+  body {
+    @apply bg-stone-50 text-stone-900 antialiased;
+    font-family: var(--font-bn);
+  }
+
+  h1, h2, h3, h4 {
+    font-family: 'Noto Serif Bengali', var(--font-bn);
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-green-800 hover:bg-green-900 text-white font-medium px-4 py-2 rounded-lg
+           transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply bg-amber-600 hover:bg-amber-700 text-white font-medium px-4 py-2 rounded-lg
+           transition-colors duration-150;
+  }
+
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-stone-200 p-4;
+  }
+
+  .badge-green {
+    @apply inline-flex items-center gap-1 bg-green-100 text-green-800 text-xs font-medium px-2 py-0.5 rounded-full;
+  }
+
+  .badge-amber {
+    @apply inline-flex items-center gap-1 bg-amber-100 text-amber-800 text-xs font-medium px-2 py-0.5 rounded-full;
+  }
+
+  .badge-red {
+    @apply inline-flex items-center gap-1 bg-red-100 text-red-800 text-xs font-medium px-2 py-0.5 rounded-full;
+  }
+
+  .input-field {
+    @apply w-full border border-stone-300 rounded-lg px-3 py-2 text-sm
+           focus:outline-none focus:ring-2 focus:ring-green-600 focus:border-transparent
+           placeholder:text-stone-400 bg-white;
+  }
+
+  .section-title {
+    @apply text-lg font-semibold text-green-900 mb-3 flex items-center gap-2;
+  }
+
+  .advisory-box {
+    @apply rounded-lg p-3 text-sm leading-relaxed;
+  }
+
+  .advisory-green { @apply advisory-box bg-green-50 text-green-800 border border-green-200; }
+  .advisory-amber { @apply advisory-box bg-amber-50 text-amber-800 border border-amber-200; }
+  .advisory-red   { @apply advisory-box bg-red-50 text-red-800 border border-red-200; }
+}
+
+/* Bengali number rendering */
+.bn-numbers { font-variant-numeric: normal; }
+
+/* Smooth page transitions */
+.page-enter {
+  animation: fadeSlideIn 0.2s ease-out;
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Loading pulse for skeleton screens */
+.skeleton {
+  @apply animate-pulse bg-stone-200 rounded;
+}
