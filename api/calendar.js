@@ -248,7 +248,23 @@ function getCropKey(crop) {
 
 // ---------- Fetch from GEMS API ----------
 async function fetchGemsCalendar(lat, lon, crop) {
-  const params = new URLSearchParams({ lat: String(lat), lon: String(lon), crop });
+  // Defense-in-depth: Validate inputs to prevent SSRF
+  // Even though inputs are validated in the handler, we validate again here
+  const latitude = parseFloat(lat);
+  const longitude = parseFloat(lon);
+  if (isNaN(latitude) || isNaN(longitude) ||
+      latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+    throw new Error('Invalid lat/lon values');
+  }
+  
+  // Validate crop against allowlist
+  const ALLOWED_CROPS = new Set(['rice','aus','rice-aus','aus-rice','aman','rice-aman','aman-rice','boro','rice-boro','boro-rice','wheat','jute']);
+  const safeCrop = String(crop).toLowerCase().trim();
+  if (!ALLOWED_CROPS.has(safeCrop)) {
+    throw new Error('Invalid crop value');
+  }
+
+  const params = new URLSearchParams({ lat: String(latitude), lon: String(longitude), crop: safeCrop });
   const url = `https://gems.umn.edu/apis/crop-calendar?${params}`;
 
   const response = await fetch(url, {
