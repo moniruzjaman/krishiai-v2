@@ -1,0 +1,5 @@
+{
+    "gemini-cli.debug.logging.enabled": true,
+    "geminicodeassist.updateChannel": "Default",
+    "python.terminal.useEnvFile": true
+}

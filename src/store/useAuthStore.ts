@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import { persist } from "zustand/middleware"
 import { supabase } from "../services/supabaseClient"
 
 // ── Types ───────────────────────────────────────────────────────
@@ -37,7 +38,9 @@ function mapUser(authUser: Record<string, unknown> | null): User | null {
 
 // ── Store ───────────────────────────────────────────────────────
 
-export const useAuthStore = create<AuthState>()((set) => ({
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set) => ({
   user: null,
   loading: false,
 
@@ -111,5 +114,10 @@ export const useAuthStore = create<AuthState>()((set) => ({
     }
   },
 
-  setUser: (user) => set({ user }),
-}))
+    setUser: (user) => set({ user }),
+  }),
+  {
+    name: "krishiai-auth",
+    partialize: (s) => ({ user: s.user }),
+  }
+))

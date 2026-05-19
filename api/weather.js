@@ -148,7 +148,8 @@ export default async function handler(req, res) {
     const latitude = parseFloat(lat);
     const longitude = parseFloat(lon);
 
-    if (isNaN(latitude) || isNaN(longitude)) {
+    if (isNaN(latitude) || isNaN(longitude) ||
+        latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
       res.status(400).set(corsHeaders()).json({
         error: 'Invalid lat/lon values.',
       });

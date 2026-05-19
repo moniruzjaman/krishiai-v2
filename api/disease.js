@@ -104,8 +104,9 @@ async function callHuggingFace(imageBase64) {
 
   const predictions = await response.json();
 
-  if (!Array.isArray(predictions) || predictions.length === 0) {
-    throw new Error('No predictions returned from HuggingFace');
+  if (!Array.isArray(predictions) || predictions.length === 0 ||
+      typeof predictions[0].label !== 'string' || typeof predictions[0].score !== 'number') {
+    throw new Error('Invalid predictions format from HuggingFace');
   }
 
   // Sort by score descending, take top 3
@@ -151,12 +152,14 @@ async function callPlantNet(imageBase64) {
   const json = await response.json();
   const results = json?.results || [];
 
-  if (results.length === 0) {
+  if (!Array.isArray(results) || results.length === 0) {
     throw new Error('No results from PlantNet');
   }
 
-  // Get best result
   const best = results[0];
+  if (typeof best !== 'object' || best === null) {
+    throw new Error('Invalid PlantNet result structure');
+  }
   const score = best.score || 0;
   const species = best.species || {};
 

@@ -177,10 +177,29 @@ async function fetchDamPrices() {
   return parseDamHtml(html);
 }
 
+// ---------- Allowed districts allowlist ----------
+const ALLOWED_DISTRICTS = new Set([
+  'kurigram','rangpur','dinajpur','gaibandha','lalmonirhat','nilphamari','panchagarh','thakurgaon',
+  'dhaka','faridpur','gazipur','gopalganj','kishoreganj','madaripur','manikganj','munshiganj',
+  'narayanganj','narsingdi','rajbari','shariatpur','tangail','chittagong','coxsbazar','comilla',
+  'feni','khagrachhari','lakshmipur','noakhali','rangamati','brahmanbaria','chandpur','bandarban',
+  'rajshahi','natore','naogaon','chapainawabganj','pabna','sirajganj','bogura','joypurhat',
+  'khulna','jessore','satkhira','meherpur','narail','chuadanga','kushtia','bagerhat','jhenaidah',
+  'barisal','patuakhali','bhola','pirojpur','barguna','jhalokati','sylhet','moulvibazar',
+  'habiganj','sunamganj','mymensingh','jamalpur','sherpur','netrokona',
+]);
+
+function sanitizeDistrict(district) {
+  const d = String(district).toLowerCase().trim().replace(/[^a-z]/g, '');
+  return ALLOWED_DISTRICTS.has(d) ? d : 'kurigram';
+}
+
 // ---------- Fetch from WFP/HDX ----------
 async function fetchWfpPrices(district) {
+  const safeDistrict = sanitizeDistrict(district);
   const resourceId = 'b6c8b6b8-710b-464a-9e11-b7d5c4e8a5d2'; // WFP Bangladesh food prices
-  const url = `https://data.humdata.org/api/3/action/datastore_search?resource_id=${resourceId}&limit=100&filters={"district":"${district}"}`;
+  const params = new URLSearchParams({ resource_id: resourceId, limit: '100' });
+  const url = `https://data.humdata.org/api/3/action/datastore_search?${params}&filters=${encodeURIComponent(JSON.stringify({ district: safeDistrict }))}`;
 
   const response = await fetch(url, {
     headers: { 'User-Agent': 'KrishiAI-Bot/2.0' },
