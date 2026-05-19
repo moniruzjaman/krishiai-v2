@@ -159,9 +159,12 @@ create table public.market_cache (
   district    text not null,
   level       text not null default 'retail',
   data        jsonb not null,              -- full MarketData object
-  fetched_at  timestamptz not null default now(),
-  unique (district, level, (fetched_at::date))
+  fetched_at  timestamptz not null default now()
 );
+
+-- Unique constraint on (district, level, date) — must be a separate index
+-- because PostgreSQL does not allow expressions in table-level UNIQUE constraints
+create unique index idx_market_cache_unique on public.market_cache(district, level, (fetched_at::date));
 
 alter table public.market_cache enable row level security;
 create policy "market_cache: public read"   on public.market_cache for select using (true);
