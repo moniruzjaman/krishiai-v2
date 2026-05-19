@@ -12,24 +12,31 @@ export interface Report {
 }
 
 export async function getReports(): Promise<Report[]> {
-  const { data, error } = await supabase
-    .from("reports")
-    .select("id, type, preview, data, image_url, district, upazila, created_at")
-    .order("created_at", { ascending: false })
-    .limit(20)
+  if (!supabase) return []
+  try {
+    const { data, error } = await supabase
+      .from("reports")
+      .select("id, type, preview, data, image_url, district, upazila, created_at")
+      .order("created_at", { ascending: false })
+      .limit(20)
 
-  if (error) throw new Error(error.message)
-  return (data ?? []) as Report[]
+    if (error) throw new Error(error.message)
+    return (data ?? []) as Report[]
+  } catch {
+    return []
+  }
 }
 
 export async function saveReport(
   report: Omit<Report, "id" | "created_at">,
 ): Promise<void> {
+  if (!supabase) return
   const { error } = await supabase.from("reports").insert(report)
   if (error) throw new Error(error.message)
 }
 
 export async function deleteReport(id: string): Promise<void> {
+  if (!supabase) return
   const { error } = await supabase.from("reports").delete().eq("id", id)
   if (error) throw new Error(error.message)
 }

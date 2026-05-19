@@ -1,6 +1,7 @@
 // KrishiAI v2 — /api/weather
 // GET handler for weather data from Open-Meteo
-// Returns Bengali weather labels and agricultural advisories
+// Returns data matching the frontend WeatherData type (camelCase)
+// Plus Bengali labels, agricultural indices, and advisory
 
 function corsHeaders() {
   return {
@@ -49,9 +50,9 @@ function getWeatherLabel(code) {
 // ---------- Generate agricultural advisory ----------
 function generateAdvisory(current, daily, agIndices) {
   const advisories = [];
-  const temp = current?.temperature_2m;
-  const humidity = current?.relative_humidity_2m;
-  const weatherCode = current?.weather_code;
+  const temp = current?.temperature2m;
+  const humidity = current?.relativeHumidity2m;
+  const weatherCode = current?.weatherCode;
 
   // Temperature advisory
   if (temp !== undefined) {
@@ -100,22 +101,6 @@ function generateAdvisory(current, daily, agIndices) {
     }
   }
 
-  // Leaf wetness advisory
-  if (agIndices?.leafWetness !== undefined) {
-    if (agIndices.leafWetness > 70) {
-      advisories.push('🍃 পাতায় আর্দ্রতা বেশি — ছত্রাক ও ব্যাকটেরিয়াল রোগের ঝুঁকি। রোগতাত্ত্বিক পর্যবেক্ষণ বাড়ান।');
-    }
-  }
-
-  // Soil moisture advisory
-  if (agIndices?.soilMoisture !== undefined) {
-    if (agIndices.soilMoisture < 0.15) {
-      advisories.push('🌾 মাটির আর্দ্রতা কম — শুষ্ক অবস্থা। জরুরি সেচ প্রয়োজন।');
-    } else if (agIndices.soilMoisture > 0.40) {
-      advisories.push('🌊 মাটির আর্দ্রতা বেশি — পানি জমার আশঙ্কা। নিষ্কাশন ব্যবস্থা করুন।');
-    }
-  }
-
   if (advisories.length === 0) {
     advisories.push('✅ আবহাওয়া অনুকূল — স্বাভাবিক কৃষিকাজ চালিয়ে যান।');
   }
@@ -159,12 +144,12 @@ export default async function handler(req, res) {
     const currentParams = [
       'temperature_2m',
       'relative_humidity_2m',
+      'apparent_temperature',
       'weather_code',
       'wind_speed_10m',
-      'soil_moisture_0_to_1cm',
-      'soil_moisture_1_to_3cm',
-      'soil_temperature_0cm',
-      'soil_temperature_6cm',
+      'wind_direction_10m',
+      'precipitation',
+      'surface_pressure',
     ].join(',');
 
     const dailyParams = [
@@ -172,10 +157,18 @@ export default async function handler(req, res) {
       'temperature_2m_max',
       'temperature_2m_min',
       'precipitation_sum',
+      'precipitation_probability_max',
+      'wind_speed_10m_max',
       'et0_fao_evapotranspiration',
-      'growing_degree_days_base_0_limit_50',
-      'leaf_wetness_probability_mean',
-      'vapour_pressure_deficit_max',
+    ].join(',');
+
+    const hourlyParams = [
+      'temperature_2m',
+      'relative_humidity_2m',
+      'precipitation',
+      'soil_moisture_0_to_1cm',
+      'soil_moisture_1_to_3cm',
+      'soil_moisture_3_to_9cm',
     ].join(',');
 
     const url =
@@ -183,9 +176,10 @@ export default async function handler(req, res) {
       `latitude=${latitude}&longitude=${longitude}` +
       `&current=${currentParams}` +
       `&daily=${dailyParams}` +
+      `&hourly=${hourlyParams}` +
       `&timezone=Asia/Dhaka&forecast_days=7`;
 
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
 
     if (!response.ok) {
       const errText = await response.text();
@@ -194,69 +188,75 @@ export default async function handler(req, res) {
 
     const data = await response.json();
 
-    // Transform current weather with Bengali labels
+    // ── Build response matching frontend WeatherData type (camelCase) ──
     const weatherLabel = getWeatherLabel(data.current?.weather_code);
+
     const current = {
-      temperature_2m: data.current?.temperature_2m,
-      temperature_label: `${data.current?.temperature_2m}°C`,
-      temperature_bn: `${data.current?.temperature_2m}°সে`,
-      relative_humidity_2m: data.current?.relative_humidity_2m,
-      humidity_bn: `${data.current?.relative_humidity_2m}% আর্দ্রতা`,
-      weather_code: data.current?.weather_code,
-      weather_en: weatherLabel.en,
-      weather_bn: weatherLabel.bn,
-      wind_speed_10m: data.current?.wind_speed_10m,
-      wind_bn: `${data.current?.wind_speed_10m} কিমি/ঘন্টা বাতাস`,
-      soil_moisture_0_to_1cm: data.current?.soil_moisture_0_to_1cm,
-      soil_moisture_1_to_3cm: data.current?.soil_moisture_1_to_3cm,
-      soil_temperature_0cm: data.current?.soil_temperature_0cm,
-      soil_temperature_6cm: data.current?.soil_temperature_6cm,
+      temperature2m: data.current?.temperature_2m,
+      relativeHumidity2m: data.current?.relative_humidity_2m,
+      apparentTemperature: data.current?.apparent_temperature,
+      weatherCode: data.current?.weather_code,
+      windSpeed10m: data.current?.wind_speed_10m,
+      windDirection10m: data.current?.wind_direction_10m,
+      precipitation: data.current?.precipitation,
+      surfacePressure: data.current?.surface_pressure,
     };
 
-    // Transform daily forecast with Bengali labels
-    const daily = (data.daily?.time || []).map((date, i) => {
-      const dayWeatherLabel = getWeatherLabel(data.daily?.weather_code?.[i]);
-      return {
-        date,
-        weather_code: data.daily?.weather_code?.[i],
-        weather_en: dayWeatherLabel.en,
-        weather_bn: dayWeatherLabel.bn,
-        temperature_2m_max: data.daily?.temperature_2m_max?.[i],
-        temperature_2m_min: data.daily?.temperature_2m_min?.[i],
-        tempRange_bn: `${data.daily?.temperature_2m_min?.[i]}°সে — ${data.daily?.temperature_2m_max?.[i]}°সে`,
-        precipitation_sum: data.daily?.precipitation_sum?.[i],
-        precipitation_bn: `${data.daily?.precipitation_sum?.[i]} মিমি বৃষ্টিপাত`,
-      };
-    });
+    const daily = {
+      date: data.daily?.time || [],
+      weatherCode: data.daily?.weather_code || [],
+      temperature2mMax: data.daily?.temperature_2m_max || [],
+      temperature2mMin: data.daily?.temperature_2m_min || [],
+      precipitationSum: data.daily?.precipitation_sum || [],
+      precipitationProbabilityMax: data.daily?.precipitation_probability_max || [],
+      windSpeed10mMax: data.daily?.wind_speed_10m_max || [],
+      et0Evapotranspiration: data.daily?.et0_fao_evapotranspiration || [],
+    };
 
-    // Agricultural indices (today = index 0)
-    const todayIdx = 0;
+    const hourly = {
+      time: data.hourly?.time || [],
+      temperature2m: data.hourly?.temperature_2m || [],
+      relativeHumidity2m: data.hourly?.relative_humidity_2m || [],
+      precipitation: data.hourly?.precipitation || [],
+      soilMoisture0To1cm: data.hourly?.soil_moisture_0_to_1cm,
+      soilMoisture1To3cm: data.hourly?.soil_moisture_1_to_3cm,
+      soilMoisture3To9cm: data.hourly?.soil_moisture_3_to_9cm,
+    };
+
+    // ── Agricultural indices (today = index 0) ──
     const agIndices = {
-      et0: data.daily?.et0_fao_evapotranspiration?.[todayIdx],
-      et0_label_bn: `বাষ্পীভবন: ${data.daily?.et0_fao_evapotranspiration?.[todayIdx]?.toFixed(1) || '—'} মিমি/দিন`,
-      gdd: data.daily?.growing_degree_days_base_0_limit_50?.[todayIdx],
-      gdd_label_bn: `বৃদ্ধি ডিগ্রি দিন: ${data.daily?.growing_degree_days_base_0_limit_50?.[todayIdx]?.toFixed(1) || '—'}`,
-      leafWetness: data.daily?.leaf_wetness_probability_mean?.[todayIdx],
-      leafWetness_label_bn: `পাতায় আর্দ্রতা সম্ভাবনা: ${data.daily?.leaf_wetness_probability_mean?.[todayIdx] ?? '—'}%`,
-      vpd: data.daily?.vapour_pressure_deficit_max?.[todayIdx],
-      vpd_label_bn: `বাষ্প চাপ ঘাটতি: ${data.daily?.vapour_pressure_deficit_max?.[todayIdx]?.toFixed(2) || '—'} kPa`,
+      et0: data.daily?.et0_fao_evapotranspiration?.[0],
+      leafWetness: data.daily?.leaf_wetness_probability_mean?.[0],
+      vpd: data.daily?.vapour_pressure_deficit_max?.[0],
       soilMoisture:
         data.current?.soil_moisture_0_to_1cm !== undefined
           ? (data.current.soil_moisture_0_to_1cm + (data.current.soil_moisture_1_to_3cm || 0)) / 2
           : undefined,
-      soilMoisture_label_bn:
-        data.current?.soil_moisture_0_to_1cm !== undefined
-          ? `মাটির আর্দ্রতা: ${(((data.current.soil_moisture_0_to_1cm + (data.current.soil_moisture_1_to_3cm || 0)) / 2) * 100).toFixed(1)}%`
-          : 'মাটির আর্দ্রতা: অজানা',
     };
 
-    // Generate advisory
+    // ── Bengali labels ──
+    const bengaliLabels = {
+      weatherBn: weatherLabel.bn,
+      weatherEn: weatherLabel.en,
+      temperatureBn: `${data.current?.temperature_2m}°সে`,
+      humidityBn: `${data.current?.relative_humidity_2m}% আর্দ্রতা`,
+      windBn: `${data.current?.wind_speed_10m} কিমি/ঘন্টা বাতাস`,
+    };
+
+    // ── Generate advisory ──
     const advisory = generateAdvisory(current, daily, agIndices);
 
     res.status(200).set(corsHeaders()).json({
+      // Primary data matching frontend WeatherData type
+      latitude: data.latitude,
+      longitude: data.longitude,
+      timezone: data.timezone,
       current,
       daily,
+      hourly,
+      // Extra enriched data
       agIndices,
+      bengaliLabels,
       advisory,
       source: 'open-meteo',
       fetchedAt: new Date().toISOString(),

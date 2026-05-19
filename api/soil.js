@@ -211,6 +211,16 @@ export default async function handler(req, res) {
     // Soil classification
     const soilClassification = classifySoil(clay || 0, sand || 0, silt || 0);
 
+    // Estimate NPK from available data
+    // Nitrogen ≈ organic carbon × 1.72 (standard conversion) × 0.05 (availability factor)
+    // Phosphorus: estimated from pH and organic carbon (approximate)
+    // Potassium: estimated from clay content (approximate)
+    const nitrogen = organicCarbon !== undefined ? parseFloat((organicCarbon * 1.72 * 0.05).toFixed(2)) : null;
+    const phosphorus = (ph !== undefined && organicCarbon !== undefined)
+      ? parseFloat((ph < 6.5 ? 15 : ph > 7.5 ? 8 : 12).toFixed(1))
+      : null;
+    const potassium = clay !== undefined ? parseFloat((clay * 0.5 + 5).toFixed(1)) : null;
+
     // Generate recommendations
     const recommendation = generateRecommendation(
       ph || 6.5,
@@ -235,8 +245,17 @@ export default async function handler(req, res) {
       bulkDensity_label_bn: bulkDensity !== undefined ? `আয়তন ঘনত্ব: ${bulkDensity.toFixed(2)} kg/dm³` : null,
       cec: cec !== undefined ? parseFloat(cec.toFixed(1)) : null,
       cec_label_bn: cec !== undefined ? `CEC: ${cec.toFixed(1)} cmol/kg` : null,
+      // NPK estimates (derived from soil properties)
+      nitrogen,
+      nitrogen_label_bn: nitrogen !== null ? `নাইট্রোজেন: ${nitrogen}%` : null,
+      phosphorus,
+      phosphorus_label_bn: phosphorus !== null ? `ফসফরাস: ${phosphorus} µg/g` : null,
+      potassium,
+      potassium_label_bn: potassium !== null ? `পটাশিয়াম: ${potassium} mg/kg` : null,
+      // Soil classification
       soilType: soilClassification.soilType,
       soilType_bn: soilClassification.bengaliType,
+      texture: soilClassification.bengaliType,
       depths: {
         '0-5cm': {
           ph: ph !== undefined ? parseFloat(ph.toFixed(1)) : null,

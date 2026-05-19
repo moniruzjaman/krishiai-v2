@@ -328,17 +328,31 @@ export default async function handler(req, res) {
     };
 
     commodities = commodities.map((c) => {
-      const baseline = baselineMap[c.name];
+      const baseline = baselineMap[c.name] || baselineMap[c.bengaliName];
+      let change = 0;
       if (baseline && c.price > 0) {
-        const diff = ((c.price - baseline) / baseline) * 100;
-        c.trend = diff > 5 ? 'up' : diff < -5 ? 'down' : 'stable';
+        change = parseFloat(((c.price - baseline) / baseline * 100).toFixed(1));
+        c.trend = change > 5 ? 'up' : change < -5 ? 'down' : 'stable';
       }
-      return c;
+
+      // Transform to match frontend CommodityPrice type
+      return {
+        commodity: c.name,
+        bengaliName: c.bengaliName,
+        unit: c.unit,
+        minPrice: Math.round(c.price * 0.9),
+        maxPrice: Math.round(c.price * 1.1),
+        avgPrice: Math.round(c.price),
+        lastUpdated: new Date().toISOString().split('T')[0],
+        change,
+        trend: c.trend || 'stable',
+      };
     });
 
     const result = {
-      date: new Date().toISOString().split('T')[0],
       district,
+      level,
+      date: new Date().toISOString().split('T')[0],
       commodities,
       source,
       fetchedAt: new Date().toISOString(),

@@ -1,6 +1,6 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
-import { supabase } from "../services/supabaseClient"
+import { supabase, isSupabaseConfigured } from "../services/supabaseClient"
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -14,6 +14,7 @@ export interface User {
 interface AuthState {
   user: User | null
   loading: boolean
+  supabaseAvailable: boolean
 
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string, phone?: string) => Promise<void>
@@ -36,15 +37,25 @@ function mapUser(authUser: Record<string, unknown> | null): User | null {
   }
 }
 
+/** Error thrown when Supabase is not configured */
+class SupabaseNotConfiguredError extends Error {
+  constructor() {
+    super("Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY environment variables.")
+    this.name = "SupabaseNotConfiguredError"
+  }
+}
+
 // ── Store ───────────────────────────────────────────────────────
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
   user: null,
   loading: false,
+  supabaseAvailable: isSupabaseConfigured(),
 
   signIn: async (email: string, password: string) => {
+    if (!supabase) throw new SupabaseNotConfiguredError()
     set({ loading: true })
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -59,6 +70,7 @@ export const useAuthStore = create<AuthState>()(
   },
 
   signUp: async (email: string, password: string, phone?: string) => {
+    if (!supabase) throw new SupabaseNotConfiguredError()
     set({ loading: true })
     try {
       const { data, error } = await supabase.auth.signUp({
@@ -76,6 +88,7 @@ export const useAuthStore = create<AuthState>()(
   },
 
   signInWithPhone: async (phone: string) => {
+    if (!supabase) throw new SupabaseNotConfiguredError()
     set({ loading: true })
     try {
       const { error } = await supabase.auth.signInWithOtp({
@@ -89,6 +102,7 @@ export const useAuthStore = create<AuthState>()(
   },
 
   verifyOtp: async (phone: string, token: string) => {
+    if (!supabase) throw new SupabaseNotConfiguredError()
     set({ loading: true })
     try {
       const { data, error } = await supabase.auth.verifyOtp({
@@ -104,6 +118,11 @@ export const useAuthStore = create<AuthState>()(
   },
 
   signOut: async () => {
+    if (!supabase) {
+      // Just clear local state if Supabase isn't configured
+      set({ user: null })
+      return
+    }
     set({ loading: true })
     try {
       const { error } = await supabase.auth.signOut()

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { Sprout, Globe, MapPin, ChevronDown } from "lucide-react"
 import { Navbar } from "./Navbar"
+import { useSettingsStore } from "@/store/useSettingsStore"
 
 const moreMenuItems = [
   { label: "Analyzer", labelBn: "বিশ্লেষক", path: "/analyzer", emoji: "🔬" },
@@ -75,10 +76,10 @@ interface LayoutProps {
 }
 
 export default function Layout({ children }: LayoutProps) {
-  const [lang, setLang] = useState<"bn" | "en">("bn")
   const [showMoreMenu, setShowMoreMenu] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
+  const { language, setLanguage } = useSettingsStore()
 
   // Close more menu on route change
   useEffect(() => {
@@ -99,6 +100,10 @@ export default function Layout({ children }: LayoutProps) {
     navigate(path)
   }
 
+  const handleToggleLanguage = () => {
+    setLanguage(language === "bn" ? "en" : "bn")
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-background font-bengali">
       {/* ── Top Header ── */}
@@ -117,8 +122,8 @@ export default function Layout({ children }: LayoutProps) {
         <div className="flex items-center gap-3">
           <GPSIndicator />
           <LanguageToggle
-            lang={lang}
-            onToggle={() => setLang((l) => (l === "bn" ? "en" : "bn"))}
+            lang={language}
+            onToggle={handleToggleLanguage}
           />
         </div>
       </header>
@@ -143,7 +148,7 @@ export default function Layout({ children }: LayoutProps) {
               <div className="px-4 pt-3 pb-2">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-foreground">
-                    আরো দেখুন
+                    {language === "bn" ? "আরো দেখুন" : "More"}
                   </h3>
                   <button
                     onClick={() => setShowMoreMenu(false)}
@@ -176,7 +181,7 @@ export default function Layout({ children }: LayoutProps) {
                       >
                         <span className="text-lg">{item.emoji}</span>
                       </div>
-                      <span>{item.labelBn}</span>
+                      <span>{language === "bn" ? item.labelBn : item.label}</span>
                     </button>
                   )
                 })}

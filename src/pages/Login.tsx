@@ -17,7 +17,7 @@ type OtpStep = "phone" | "otp"
 
 export default function Login() {
   const navigate = useNavigate()
-  const { signIn, signUp, signInWithPhone, verifyOtp, loading } = useAuthStore()
+  const { signIn, signUp, signInWithPhone, verifyOtp, loading, supabaseAvailable } = useAuthStore()
   const { setDistrict, setUpazila } = useLocationStore()
   const { language } = useSettingsStore()
 
@@ -132,6 +132,14 @@ export default function Login() {
       </div>
 
       <Card className="w-full max-w-md">
+        {/* Supabase not configured notice */}
+        {!supabaseAvailable && (
+          <div className="mx-4 mt-4 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-700">
+            {language === "bn"
+              ? "⚠️ অথেনটিকেশন সার্ভিস কনফিগার করা হয়নি। অতিথি হিসেবে ব্যবহার করুন।"
+              : "⚠️ Auth service not configured. Use as guest."}
+          </div>
+        )}
         <CardHeader className="pb-2">
           {/* Tab selector */}
           <div className="flex rounded-lg bg-gray-100 p-1">
@@ -232,7 +240,7 @@ export default function Login() {
                   </div>
                   <Button
                     onClick={handleEmailLogin}
-                    disabled={loading}
+                    disabled={loading || !supabaseAvailable}
                     className="w-full"
                     size="lg"
                   >
@@ -259,7 +267,7 @@ export default function Login() {
                       </div>
                       <Button
                         onClick={handlePhoneOtpRequest}
-                        disabled={loading}
+                        disabled={loading || !supabaseAvailable}
                         className="w-full"
                         size="lg"
                       >
@@ -287,7 +295,7 @@ export default function Login() {
                       />
                       <Button
                         onClick={handleOtpVerify}
-                        disabled={loading || otpCode.length !== 6}
+                        disabled={loading || otpCode.length !== 6 || !supabaseAvailable}
                         className="w-full"
                         size="lg"
                       >
@@ -372,7 +380,7 @@ export default function Login() {
               </select>
               <Button
                 onClick={handleSignUp}
-                disabled={loading}
+                disabled={loading || !supabaseAvailable}
                 className="w-full"
                 size="lg"
               >

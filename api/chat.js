@@ -107,7 +107,7 @@ async function callGemini({ message, history, language, location }) {
     json?.candidates?.[0]?.content?.parts?.[0]?.text ||
     (language === 'bn' ? 'দুঃখিত, উত্তর তৈরি করা যায়নি।' : 'Sorry, no response generated.');
 
-  return { reply, provider: 'gemini-2.0-flash' };
+  return { reply, message: reply, provider: 'gemini-2.0-flash' };
 }
 
 // ---------- Groq Llama 3.3 70B ----------
@@ -158,7 +158,7 @@ async function callGroq({ message, history, language, location }) {
   const reply = json?.choices?.[0]?.message?.content ||
     (language === 'bn' ? 'দুঃখিত, উত্তর তৈরি করা যায়নি।' : 'Sorry, no response generated.');
 
-  return { reply, provider: 'groq-llama3.3-70b' };
+  return { reply, message: reply, provider: 'groq-llama3.3-70b' };
 }
 
 // ---------- Rule-based keyword matching ----------
@@ -237,25 +237,19 @@ function ruleBasedFallback({ message, language }) {
   }
 
   if (bestMatch) {
-    return { reply: bestMatch.reply, provider: 'rule-based' };
+    return { reply: bestMatch.reply, message: bestMatch.reply, provider: 'rule-based' };
   }
 
   // Generic fallback
   if (lang === 'en') {
-    return {
-      reply:
-        'I can help with rice cultivation, crop diseases, fertilizer application, pest control, ' +
-        'irrigation, market prices, and aquaculture. Please ask a specific question about farming in Bangladesh.',
-      provider: 'rule-based',
-    };
+    const enReply = 'I can help with rice cultivation, crop diseases, fertilizer application, pest control, ' +
+        'irrigation, market prices, and aquaculture. Please ask a specific question about farming in Bangladesh.';
+    return { reply: enReply, message: enReply, provider: 'rule-based' };
   }
 
-  return {
-    reply:
-      'আমি ধান চাষ, ফসল রোগ, সার প্রয়োগ, কীটপতঙ্গ দমন, সেচ, বাজার মূল্য এবং মাছ চাষ ' +
-      'সম্পর্কে সাহায্য করতে পারি। বাংলাদেশের কৃষি সম্পর্কে নির্দিষ্ট প্রশ্ন করুন।',
-    provider: 'rule-based',
-  };
+  const bnReply = 'আমি ধান চাষ, ফসল রোগ, সার প্রয়োগ, কীটপতঙ্গ দমন, সেচ, বাজার মূল্য এবং মাছ চাষ ' +
+      'সম্পর্কে সাহায্য করতে পারি। বাংলাদেশের কৃষি সম্পর্কে নির্দিষ্ট প্রশ্ন করুন।';
+  return { reply: bnReply, message: bnReply, provider: 'rule-based' };
 }
 
 // ---------- Main handler ----------
