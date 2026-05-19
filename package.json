@@ -45,5 +45,14 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12"
+  },
+  "overrides": {
+    "@supabase/supabase-js": {
+      "@supabase/cli-windows-x64": "npm:empty-npm-package@1.0.0",
+      "@supabase/cli-darwin-x64": "npm:empty-npm-package@1.0.0",
+      "@supabase/cli-darwin-arm64": "npm:empty-npm-package@1.0.0",
+      "@supabase/cli-linux-x64": "npm:empty-npm-package@1.0.0",
+      "@supabase/cli-linux-arm64": "npm:empty-npm-package@1.0.0"
+    }
   }
 }
