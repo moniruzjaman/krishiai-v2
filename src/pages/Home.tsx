@@ -1,3 +1,4 @@
+import { memo, useMemo, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import {
@@ -8,7 +9,6 @@ import {
   TrendingUp,
   Layers,
   MapPin,
-  Sprout,
   ChevronRight,
   Clock,
 } from "lucide-react"
@@ -21,7 +21,7 @@ import { MarketTicker, type Commodity } from "@/components/MarketTicker"
 import LocationMap from "@/components/LocationMap"
 import { useLocationStore } from "@/store/useLocationStore"
 import { useSettingsStore } from "@/store/useSettingsStore"
-import { getWeather, getAgAdvisory, type WeatherData as ApiWeatherData } from "@/services/weatherService"
+import { getWeather, type WeatherData as ApiWeatherData } from "@/services/weatherService"
 import { getMarketPrices, type CommodityPrice } from "@/services/marketService"
 import { toBengaliNumber, toBengaliDate, BENGALI_MONTHS, BENGALI_DAYS } from "@/lib/bengali"
 import { CROP_LIST } from "@/lib/constants"
@@ -48,7 +48,7 @@ function getSeasonalAdvisory(): { crop: string; advisory: string; emoji: string 
   return seasonAdvisories[month] ?? seasonAdvisories[0]
 }
 
-// ── Quick access items ──
+// ── Quick access items (memoized outside component) ──
 const quickAccessItems = [
   { label: "চ্যাট", labelEn: "Chat", icon: MessageSquare, path: "/chat", color: "bg-green-100 text-green-700" },
   { label: "ফসল বিশ্লেষণ", labelEn: "Analyzer", icon: ScanSearch, path: "/analyzer", color: "bg-amber-100 text-amber-700" },
@@ -57,6 +57,39 @@ const quickAccessItems = [
   { label: "বাজার দর", labelEn: "Market", icon: TrendingUp, path: "/market", color: "bg-purple-100 text-purple-700" },
   { label: "মাটি বিশ্লেষণ", labelEn: "Soil", icon: Layers, path: "/soil", color: "bg-earth-100 text-earth-700" },
 ]
+
+// ── Memoized Quick Access Card ──
+const QuickAccessCard = memo(function QuickAccessCard({
+  item,
+  language,
+  onClick,
+}: {
+  item: typeof quickAccessItems[number]
+  language: "bn" | "en"
+  onClick: () => void
+}) {
+  const Icon = item.icon
+  return (
+    <Card
+      className="cursor-pointer border-border/60 active:scale-[0.97]"
+      onClick={onClick}
+    >
+      <CardContent className="flex flex-col items-center gap-2 p-3">
+        <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${item.color}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <span className="text-center text-xs font-medium leading-tight text-foreground">
+          {language === "bn" ? item.label : item.labelEn}
+        </span>
+      </CardContent>
+    </Card>
+  )
+})
+
+// Helper
+function cn(...inputs: (string | false | null | undefined)[]) {
+  return inputs.filter(Boolean).join(" ")
+}
 
 export default function Home() {
   const navigate = useNavigate()
@@ -82,38 +115,45 @@ export default function Home() {
     staleTime: 30 * 60 * 1000,
   })
 
-  // Transform API weather data to WeatherStrip format
-  const stripWeather: StripWeatherData | null = weatherQuery.data
-    ? {
-        temperature: Math.round(weatherQuery.data.current.temperature2m),
-        humidity: weatherQuery.data.current.relativeHumidity2m,
-        windSpeed: Math.round(weatherQuery.data.current.windSpeed10m),
-        weatherCode: weatherQuery.data.current.weatherCode,
-        isDay: true,
-        precipitationChance: weatherQuery.data.daily.precipitationProbabilityMax[0] ?? 0,
-      }
-    : null
+  // Memoized weather strip data
+  const stripWeather: StripWeatherData | null = useMemo(() => {
+    if (!weatherQuery.data) return null
+    const d = weatherQuery.data
+    return {
+      temperature: Math.round(d.current.temperature2m),
+      humidity: d.current.relativeHumidity2m,
+      windSpeed: Math.round(d.current.windSpeed10m),
+      weatherCode: d.current.weatherCode,
+      isDay: true,
+      precipitationChance: d.daily.precipitationProbabilityMax[0] ?? 0,
+    }
+  }, [weatherQuery.data])
 
-  // Transform market data to MarketTicker format
-  const tickerCommodities: Commodity[] = marketQuery.data
-    ? marketQuery.data.commodities.slice(0, 5).map((c: CommodityPrice) => ({
-        nameBn: c.bengaliName,
-        nameEn: c.commodity,
-        price: c.avgPrice,
-        unit: c.unit,
-        change: c.change,
-      }))
-    : []
+  // Memoized market data
+  const tickerCommodities: Commodity[] = useMemo(() => {
+    if (!marketQuery.data) return []
+    return marketQuery.data.commodities.slice(0, 5).map((c: CommodityPrice) => ({
+      nameBn: c.bengaliName,
+      nameEn: c.commodity,
+      price: c.avgPrice,
+      unit: c.unit,
+      change: c.change,
+    }))
+  }, [marketQuery.data])
 
-  const seasonal = getSeasonalAdvisory()
+  const seasonal = useMemo(() => getSeasonalAdvisory(), [])
 
-  const handleRequestGps = async () => {
+  const handleRequestGps = useCallback(async () => {
     try {
       await requestGps()
     } catch {
       // Error handled within store
     }
-  }
+  }, [requestGps])
+
+  const handleWeatherClick = useCallback(() => navigate("/weather"), [navigate])
+  const handleCalendarClick = useCallback(() => navigate("/calendar"), [navigate])
+  const handleMarketClick = useCallback(() => navigate("/market"), [navigate])
 
   // Current date in Bengali
   const now = new Date()
@@ -162,9 +202,9 @@ export default function Home() {
         </Card>
       )}
 
-      {/* ── Map Card ── */}
+      {/* ── Map Card (deferred — only renders when GPS available) ── */}
       <section>
-        <LocationMap height={180} zoom={12} />
+        <LocationMap height={180} zoom={12} showWithoutGps={false} />
         {locationLabel && (
           <p className="mt-1 text-center text-xs text-muted-foreground">
             {locationLabel}
@@ -180,7 +220,7 @@ export default function Home() {
         {weatherQuery.isLoading ? (
           <Skeleton className="h-28 w-full rounded-xl" />
         ) : stripWeather ? (
-          <div className="cursor-pointer" onClick={() => navigate("/weather")} role="button" tabIndex={0}>
+          <div className="cursor-pointer" onClick={handleWeatherClick} role="button" tabIndex={0}>
             <WeatherStrip weather={stripWeather} />
           </div>
         ) : (
@@ -209,8 +249,8 @@ export default function Home() {
         {marketQuery.data && (
           <div className="mt-1 text-right">
             <button
-              onClick={() => navigate("/market")}
-              className="text-xs font-medium text-primary-600 hover:text-primary-800"
+              onClick={handleMarketClick}
+              className="text-xs font-medium text-primary-600 active:text-primary-800"
             >
               {language === "bn" ? "সব দাম দেখুন" : "View all prices"} →
             </button>
@@ -224,25 +264,14 @@ export default function Home() {
           {language === "bn" ? "দ্রুত অ্যাক্সেস" : "Quick Access"}
         </h2>
         <div className="grid grid-cols-3 gap-3">
-          {quickAccessItems.map((item) => {
-            const Icon = item.icon
-            return (
-              <Card
-                key={item.path}
-                className="cursor-pointer border-border/60 transition-all duration-200 hover:border-primary-300 hover:shadow-md active:scale-[0.97]"
-                onClick={() => navigate(item.path)}
-              >
-                <CardContent className="flex flex-col items-center gap-2 p-3">
-                  <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${item.color}`}>
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <span className="text-center text-xs font-medium leading-tight text-foreground">
-                    {language === "bn" ? item.label : item.labelEn}
-                  </span>
-                </CardContent>
-              </Card>
-            )
-          })}
+          {quickAccessItems.map((item) => (
+            <QuickAccessCard
+              key={item.path}
+              item={item}
+              language={language}
+              onClick={() => navigate(item.path)}
+            />
+          ))}
         </div>
       </section>
 
@@ -270,8 +299,8 @@ export default function Home() {
               </div>
             </div>
             <button
-              onClick={() => navigate("/calendar")}
-              className="mt-3 flex w-full items-center justify-center gap-1 rounded-lg border border-green-200 bg-white py-2 text-sm font-medium text-green-700 transition-colors hover:bg-green-50"
+              onClick={handleCalendarClick}
+              className="mt-3 flex w-full items-center justify-center gap-1 rounded-lg border border-green-200 bg-white py-2 text-sm font-medium text-green-700 active:bg-green-50"
             >
               {language === "bn" ? "কৃষি ক্যালেন্ডার দেখুন" : "View Agri Calendar"}
               <ChevronRight className="h-4 w-4" />
@@ -289,9 +318,4 @@ export default function Home() {
       )}
     </div>
   )
-}
-
-// Helper — re-import cn to avoid error
-function cn(...inputs: (string | false | null | undefined)[]) {
-  return inputs.filter(Boolean).join(" ")
 }

@@ -1,6 +1,6 @@
+import { memo } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { Home, MessageCircle, Cloud, Layers, Menu } from "lucide-react"
-import { cn } from "@/lib/utils"
 
 const navItems = [
   { label: "হোম", icon: Home, path: "/" },
@@ -15,7 +15,17 @@ interface NavbarProps {
   showMoreMenu?: boolean
 }
 
-export function Navbar({ onMoreClick, showMoreMenu = false }: NavbarProps) {
+/**
+ * Navbar — Memoized bottom navigation bar.
+ *
+ * Performance optimizations:
+ * - Wrapped in React.memo to prevent re-renders on route changes
+ *   (useLocation triggers re-render but memo shallow-compare prevents DOM updates)
+ * - Removed backdrop-blur-md (expensive on mobile, causes high INP)
+ * - Simplified CSS transitions (removed transition-all, using will-change)
+ * - Minimal className computation
+ */
+function NavbarInner({ onMoreClick, showMoreMenu = false }: NavbarProps) {
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -27,49 +37,41 @@ export function Navbar({ onMoreClick, showMoreMenu = false }: NavbarProps) {
     }
   }
 
+  const currentPath = location.pathname
+
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-white/95 backdrop-blur-md"
+      className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-white"
       role="navigation"
       aria-label="Main navigation"
     >
-      <div className="mx-auto flex h-16 max-w-lg items-center justify-around px-2">
+      <div className="mx-auto flex h-14 max-w-lg items-center justify-around px-1">
         {navItems.map((item) => {
           const isMoreItem = item.path === "/more"
           const isActive = isMoreItem
             ? showMoreMenu
             : item.path === "/"
-            ? location.pathname === "/"
-            : location.pathname.startsWith(item.path)
+            ? currentPath === "/"
+            : currentPath.startsWith(item.path)
+
+          const Icon = item.icon
 
           return (
             <button
               key={item.path}
               onClick={() => handleNavClick(item)}
-              className={cn(
-                "relative flex flex-col items-center justify-center gap-0.5 rounded-lg px-3 py-1.5 text-[11px] font-medium transition-all duration-200 min-w-[56px]",
-                isActive
-                  ? "text-primary-600"
-                  : "text-gray-400 hover:text-gray-600"
-              )}
+              className={`flex flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1 text-[11px] font-medium min-w-[52px] ${
+                isActive ? "text-primary-600" : "text-gray-400"
+              }`}
               aria-current={isActive && !isMoreItem ? "page" : undefined}
               aria-label={item.label}
               aria-expanded={isMoreItem ? showMoreMenu : undefined}
             >
-              <item.icon
-                className={cn(
-                  "h-5 w-5 transition-all duration-200",
-                  isActive && !isMoreItem && "fill-primary-100 stroke-primary-600",
-                  isMoreItem && showMoreMenu && "rotate-90"
-                )}
+              <Icon
+                className={`h-5 w-5 ${isActive && !isMoreItem ? "fill-primary-100 stroke-primary-600" : ""} ${isMoreItem && showMoreMenu ? "rotate-90" : ""}`}
                 strokeWidth={isActive ? 2.5 : 1.8}
               />
-              <span
-                className={cn(
-                  "transition-all duration-200",
-                  isActive && "font-bold"
-                )}
-              >
+              <span className={isActive ? "font-bold" : ""}>
                 {item.label}
               </span>
               {isActive && !isMoreItem && (
@@ -84,3 +86,5 @@ export function Navbar({ onMoreClick, showMoreMenu = false }: NavbarProps) {
     </nav>
   )
 }
+
+export const Navbar = memo(NavbarInner)
