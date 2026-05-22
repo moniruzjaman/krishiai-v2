@@ -13,6 +13,8 @@ import Calendar from './pages/Calendar'
 import Login from './pages/Login'
 import Profile from './pages/Profile'
 import { useSettingsStore } from './store/useSettingsStore'
+import { useLocationStore } from './store/useLocationStore'
+import { autoInitDatabase } from './services/dbInitService'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,6 +35,37 @@ function ThemeSync() {
     root.classList.toggle('text-large', fontSize === 'large')
   }, [theme, fontSize])
 
+  return null
+}
+
+/**
+ * LocationInitializer — Auto-requests GPS and reverse-geocodes
+ * on app startup. If permission was previously granted, this
+ * happens silently without any UI prompt.
+ *
+ * Also starts watching position for live updates.
+ * Also attempts database auto-init.
+ */
+function LocationInitializer() {
+  const { autoInitLocation, startWatching, stopWatching, gps } = useLocationStore()
+
+  useEffect(() => {
+    // Auto-init location on mount
+    autoInitLocation()
+
+    // Start watching GPS position
+    startWatching()
+
+    // Auto-init database
+    autoInitDatabase()
+
+    return () => {
+      stopWatching()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // When GPS is available, refresh data
   return null
 }
 
@@ -99,6 +132,7 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <ThemeSync />
+          <LocationInitializer />
           <Layout>
             <Routes>
               <Route path="/" element={<Home />} />

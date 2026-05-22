@@ -41,7 +41,7 @@ export default function Market() {
   const { district, setDistrict } = useLocationStore()
   const { language, t } = useSettingsStore()
 
-  const [selectedDistrict, setSelectedDistrict] = useState(district || "কুড়িগ্রাম")
+  const [selectedDistrict, setSelectedDistrict] = useState(district || "")
   const [activeCategory, setActiveCategory] = useState("all")
 
   // ── Market data query ──

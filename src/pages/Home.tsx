@@ -9,8 +9,8 @@ import {
   Layers,
   MapPin,
   Sprout,
-  Globe,
   ChevronRight,
+  Clock,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -18,23 +18,25 @@ import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { WeatherStrip } from "@/components/WeatherStrip"
 import { MarketTicker, type Commodity } from "@/components/MarketTicker"
+import LocationMap from "@/components/LocationMap"
 import { useLocationStore } from "@/store/useLocationStore"
 import { useSettingsStore } from "@/store/useSettingsStore"
 import { getWeather, getAgAdvisory, type WeatherData as ApiWeatherData } from "@/services/weatherService"
 import { getMarketPrices, type CommodityPrice } from "@/services/marketService"
-import { toBengaliNumber, toBengaliDate, BENGALI_MONTHS } from "@/lib/bengali"
+import { toBengaliNumber, toBengaliDate, BENGALI_MONTHS, BENGALI_DAYS } from "@/lib/bengali"
 import { CROP_LIST } from "@/lib/constants"
+import { MARKET_DEFAULT_DISTRICT } from "@/lib/appConfig"
 import type { WeatherData as StripWeatherData } from "@/components/WeatherStrip"
 
-// ── Seasonal advisory logic ──
+// ── Seasonal advisory logic (dynamic, based on month) ───────────
 function getSeasonalAdvisory(): { crop: string; advisory: string; emoji: string } {
   const month = new Date().getMonth() // 0-indexed
   const seasonAdvisories: Record<number, { crop: string; advisory: string; emoji: string }> = {
     0: { crop: "বোরো ধান", advisory: "বোরো মৌসুমের চারা রোপণের উপযুক্ত সময়। সেচ ব্যবস্থা নিশ্চিত করুন।", emoji: "🌾" },
     1: { crop: "বোরো ধান ও গম", advisory: "সেচ দিন এবং সার প্রয়োগ করুন। ঠান্ডা থেকে চারা রক্ষা করুন।", emoji: "🌾" },
     2: { crop: "বোরো ধান ও সবজি", advisory: "সার প্রয়োগ ও পোকামাকড় পরিদর্শন করুন। বসন্তের সবজি লাগান।", emoji: "🥬" },
-    3: { crop: "অুস ধান", advisory: "অুস ধানের বীজ বপন শুরু করুন। জমি তৈরি ও সার প্রয়োগ করুন।", emoji: "🌱" },
-    4: { crop: "অুস ধান ও পাট", advisory: "অুস ধানের চারা রোপণ করুন। পাটের বীজ বপনের সময়।", emoji: "🪢" },
+    3: { crop: "ঔস ধান", advisory: "ঔস ধানের বীজ বপন শুরু করুন। জমি তৈরি ও সার প্রয়োগ করুন।", emoji: "🌱" },
+    4: { crop: "ঔস ধান ও পাট", advisory: "ঔস ধানের চারা রোপণ করুন। পাটের বীজ বপনের সময়।", emoji: "🪢" },
     5: { crop: "পাট ও সবজি", advisory: "পাটের যত্ন নিন। বর্ষার সবজি চাষ শুরু করুন।", emoji: "🪢" },
     6: { crop: "আমন ধান", advisory: "আমন ধানের বীজতলা তৈরি করুন। বর্ষায় নিষ্কাশন নিশ্চিত করুন।", emoji: "🌾" },
     7: { crop: "আমন ধান", advisory: "আমন ধানের চারা রোপণ করুন। পানি নিষ্কাশন ও সার ব্যবস্থা করুন।", emoji: "🌾" },
@@ -58,7 +60,7 @@ const quickAccessItems = [
 
 export default function Home() {
   const navigate = useNavigate()
-  const { gps, upazila, requestGps } = useLocationStore()
+  const { gps, upazila, district, locationLabel, requestGps, isLocating } = useLocationStore()
   const { language, setLanguage, t } = useSettingsStore()
 
   // ── Weather query ──
@@ -72,10 +74,11 @@ export default function Home() {
     staleTime: 10 * 60 * 1000,
   })
 
-  // ── Market query ──
+  // ── Market query — uses user's district or default ──
+  const marketDistrict = district || MARKET_DEFAULT_DISTRICT
   const marketQuery = useQuery({
-    queryKey: ["market", "কুড়িগ্রাম"],
-    queryFn: () => getMarketPrices("কুড়িগ্রাম", "retail"),
+    queryKey: ["market", marketDistrict],
+    queryFn: () => getMarketPrices(marketDistrict, "retail"),
     staleTime: 30 * 60 * 1000,
   })
 
@@ -112,9 +115,27 @@ export default function Home() {
     }
   }
 
+  // Current date in Bengali
+  const now = new Date()
+  const dateStr = `${BENGALI_DAYS[now.getDay()]}, ${toBengaliNumber(now.getDate())} ${BENGALI_MONTHS[now.getMonth()]}`
+
   return (
     <div className="space-y-5 p-4">
-      {/* ── GPS Prompt ── */}
+      {/* ── Location & Date Header ── */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <MapPin className={cn("h-4 w-4", gps ? "text-primary-600" : "text-muted-foreground")} />
+          <span className="text-sm font-medium text-foreground">
+            {locationLabel || (language === "bn" ? "অবস্থান নির্ণয় হচ্ছে..." : "Locating...")}
+          </span>
+        </div>
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Clock className="h-3 w-3" />
+          <span>{dateStr}</span>
+        </div>
+      </div>
+
+      {/* ── GPS Prompt (only if not located) ── */}
       {!gps && (
         <Card className="border-primary-200 bg-primary-50/60">
           <CardContent className="flex items-center gap-3 p-4">
@@ -131,13 +152,25 @@ export default function Home() {
                   : "To get local weather & advisories"}
               </p>
             </div>
-            <Button size="sm" onClick={handleRequestGps}>
+            <Button size="sm" onClick={handleRequestGps} disabled={isLocating}>
               <MapPin className="h-4 w-4" />
-              {language === "bn" ? "অনুমতি দিন" : "Allow"}
+              {isLocating
+                ? (language === "bn" ? "খুঁজছি..." : "Locating...")
+                : (language === "bn" ? "অনুমতি দিন" : "Allow")}
             </Button>
           </CardContent>
         </Card>
       )}
+
+      {/* ── Map Card ── */}
+      <section>
+        <LocationMap height={180} zoom={12} />
+        {locationLabel && (
+          <p className="mt-1 text-center text-xs text-muted-foreground">
+            {locationLabel}
+          </p>
+        )}
+      </section>
 
       {/* ── Weather Strip ── */}
       <section>
@@ -247,13 +280,18 @@ export default function Home() {
         </Card>
       </section>
 
-      {/* ── Location Info ── */}
-      {upazila && (
+      {/* ── Location Footer ── */}
+      {locationLabel && (
         <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
           <MapPin className="h-3 w-3" />
-          <span>{upazila}, {language === "bn" ? "কুড়িগ্রাম" : "Kurigram"}</span>
+          <span>{locationLabel}</span>
         </div>
       )}
     </div>
   )
+}
+
+// Helper — re-import cn to avoid error
+function cn(...inputs: (string | false | null | undefined)[]) {
+  return inputs.filter(Boolean).join(" ")
 }
