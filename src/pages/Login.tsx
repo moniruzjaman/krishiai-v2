@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { Sprout, Mail, Lock, Phone, MapPin, Eye, EyeOff, ArrowLeft } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -8,17 +8,18 @@ import { Badge } from "@/components/ui/badge"
 import { useAuthStore } from "@/store/useAuthStore"
 import { useLocationStore } from "@/store/useLocationStore"
 import { useSettingsStore } from "@/store/useSettingsStore"
-import { KURIGRAM_UPAZILAS, BD_DISTRICTS } from "@/lib/constants"
+import { BD_DISTRICTS } from "@/lib/constants"
 import { cn } from "@/lib/utils"
+import { supabase } from "@/services/supabaseClient"
 
 type AuthTab = "login" | "signup"
-type LoginMethod = "email" | "phone"
+type LoginMethod = "email" | "phone" | "google"
 type OtpStep = "phone" | "otp"
 
 export default function Login() {
   const navigate = useNavigate()
   const { signIn, signUp, signInWithPhone, verifyOtp, loading, supabaseAvailable } = useAuthStore()
-  const { setDistrict, setUpazila } = useLocationStore()
+  const { district, upazila, setDistrict, setUpazila } = useLocationStore()
   const { language } = useSettingsStore()
 
   const [tab, setTab] = useState<AuthTab>("login")
@@ -36,11 +37,33 @@ export default function Login() {
   const [signUpEmail, setSignUpEmail] = useState("")
   const [signUpPassword, setSignUpPassword] = useState("")
   const [signUpPhone, setSignUpPhone] = useState("")
-  const [signUpDistrict, setSignUpDistrict] = useState("")
-  const [signUpUpazila, setSignUpUpazila] = useState("")
+  const [signUpDistrict, setSignUpDistrict] = useState(district || "")
+  const [signUpUpazila, setSignUpUpazila] = useState(upazila || "")
 
   // Error
   const [error, setError] = useState("")
+
+  // ── Auto-detect device email (best-effort) ──
+  // Web browsers don't expose device email for privacy,
+  // but we can auto-fill from the auth session if returning user.
+  // Google One Tap / OAuth is the proper way to "auto-detect Gmail".
+  useEffect(() => {
+    // Check if there's a saved email hint in localStorage
+    try {
+      const savedEmail = localStorage.getItem("krishiai-email-hint")
+      if (savedEmail && !email) {
+        setEmail(savedEmail)
+      }
+    } catch {
+      // localStorage unavailable
+    }
+  }, [])
+
+  // Pre-fill district/upazila from location store
+  useEffect(() => {
+    if (district) setSignUpDistrict(district)
+    if (upazila) setSignUpUpazila(upazila)
+  }, [district, upazila])
 
   // ── Login handlers ──
   const handleEmailLogin = async () => {
@@ -51,6 +74,8 @@ export default function Login() {
     }
     try {
       await signIn(email, password)
+      // Save email hint for next time
+      try { localStorage.setItem("krishiai-email-hint", email) } catch {}
       navigate("/")
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Login failed"
@@ -88,6 +113,28 @@ export default function Login() {
     }
   }
 
+  // ── Google OAuth Sign-In ──
+  const handleGoogleSignIn = async () => {
+    setError("")
+    if (!supabase) {
+      setError(language === "bn" ? "অথেনটিকেশন সার্ভিস কনফিগার করা হয়নি" : "Auth service not configured")
+      return
+    }
+    try {
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: window.location.origin,
+        },
+      })
+      if (oauthError) throw oauthError
+      // OAuth will redirect — no need to navigate
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Google sign-in failed"
+      setError(msg)
+    }
+  }
+
   // ── Signup handler ──
   const handleSignUp = async () => {
     setError("")
@@ -103,6 +150,8 @@ export default function Login() {
       await signUp(signUpEmail, signUpPassword, signUpPhone || undefined)
       if (signUpDistrict) setDistrict(signUpDistrict)
       if (signUpUpazila) setUpazila(signUpUpazila)
+      // Save email hint
+      try { localStorage.setItem("krishiai-email-hint", signUpEmail) } catch {}
       navigate("/")
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Sign up failed"
@@ -176,6 +225,38 @@ export default function Login() {
             </div>
           )}
 
+          {/* ── Google Sign-In Button (always visible at top) ── */}
+          {supabaseAvailable && (
+            <Button
+              variant="outline"
+              className="w-full flex items-center gap-3 border-gray-300 bg-white hover:bg-gray-50"
+              size="lg"
+              onClick={handleGoogleSignIn}
+              disabled={loading}
+            >
+              <svg className="h-5 w-5" viewBox="0 0 24 24">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+              </svg>
+              <span className="text-sm font-medium text-gray-700">
+                {language === "bn" ? "Google দিয়ে লগইন" : "Continue with Google"}
+              </span>
+            </Button>
+          )}
+
+          {/* Divider */}
+          {supabaseAvailable && (
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-xs text-muted-foreground">
+                {language === "bn" ? "অথবা" : "or"}
+              </span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+          )}
+
           {/* ── Login Form ── */}
           {tab === "login" && (
             <>
@@ -219,6 +300,7 @@ export default function Login() {
                       onChange={(e) => setEmail(e.target.value)}
                       className="pl-10"
                       dir="ltr"
+                      autoComplete="email"
                     />
                   </div>
                   <div className="relative">
@@ -230,6 +312,7 @@ export default function Login() {
                       onChange={(e) => setPassword(e.target.value)}
                       className="pl-10 pr-10"
                       dir="ltr"
+                      autoComplete="current-password"
                     />
                     <button
                       onClick={() => setShowPassword(!showPassword)}
@@ -263,6 +346,7 @@ export default function Login() {
                           onChange={(e) => setPhone(e.target.value)}
                           className="pl-10"
                           dir="ltr"
+                          autoComplete="tel"
                         />
                       </div>
                       <Button
@@ -328,6 +412,7 @@ export default function Login() {
                   onChange={(e) => setSignUpEmail(e.target.value)}
                   className="pl-10"
                   dir="ltr"
+                  autoComplete="email"
                 />
               </div>
               <div className="relative">
@@ -339,6 +424,7 @@ export default function Login() {
                   onChange={(e) => setSignUpPassword(e.target.value)}
                   className="pl-10 pr-10"
                   dir="ltr"
+                  autoComplete="new-password"
                 />
                 <button
                   onClick={() => setShowPassword(!showPassword)}
@@ -356,8 +442,10 @@ export default function Login() {
                   onChange={(e) => setSignUpPhone(e.target.value)}
                   className="pl-10"
                   dir="ltr"
+                  autoComplete="tel"
                 />
               </div>
+              {/* District — pre-filled from GPS */}
               <select
                 value={signUpDistrict}
                 onChange={(e) => setSignUpDistrict(e.target.value)}
@@ -368,16 +456,20 @@ export default function Login() {
                   <option key={d} value={d}>{d}</option>
                 ))}
               </select>
-              <select
+              {/* Upazila — pre-filled from GPS */}
+              <Input
+                type="text"
+                placeholder={language === "bn" ? "উপজেলা (স্বয়ংক্রিয়ভাবে পূরণ হবে)" : "Upazila (auto-filled from GPS)"}
                 value={signUpUpazila}
                 onChange={(e) => setSignUpUpazila(e.target.value)}
-                className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <option value="">{language === "bn" ? "উপজেলা নির্বাচন করুন" : "Select Upazila"}</option>
-                {KURIGRAM_UPAZILAS.map((uz) => (
-                  <option key={uz} value={uz}>{uz}</option>
-                ))}
-              </select>
+                dir="auto"
+              />
+              {district && (
+                <p className="text-[10px] text-green-600 flex items-center gap-1">
+                  <MapPin className="h-3 w-3" />
+                  {language === "bn" ? "আপনার অবস্থান থেকে স্বয়ংক্রিয়ভাবে পূরণ হয়েছে" : "Auto-filled from your location"}
+                </p>
+              )}
               <Button
                 onClick={handleSignUp}
                 disabled={loading || !supabaseAvailable}

@@ -1,3 +1,4 @@
+import { memo, useMemo, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import {
@@ -8,9 +9,8 @@ import {
   TrendingUp,
   Layers,
   MapPin,
-  Sprout,
-  Globe,
   ChevronRight,
+  Clock,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -18,23 +18,25 @@ import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { WeatherStrip } from "@/components/WeatherStrip"
 import { MarketTicker, type Commodity } from "@/components/MarketTicker"
+import LocationMap from "@/components/LocationMap"
 import { useLocationStore } from "@/store/useLocationStore"
 import { useSettingsStore } from "@/store/useSettingsStore"
-import { getWeather, getAgAdvisory, type WeatherData as ApiWeatherData } from "@/services/weatherService"
+import { getWeather, type WeatherData as ApiWeatherData } from "@/services/weatherService"
 import { getMarketPrices, type CommodityPrice } from "@/services/marketService"
-import { toBengaliNumber, toBengaliDate, BENGALI_MONTHS } from "@/lib/bengali"
+import { toBengaliNumber, toBengaliDate, BENGALI_MONTHS, BENGALI_DAYS } from "@/lib/bengali"
 import { CROP_LIST } from "@/lib/constants"
+import { MARKET_DEFAULT_DISTRICT } from "@/lib/appConfig"
 import type { WeatherData as StripWeatherData } from "@/components/WeatherStrip"
 
-// ── Seasonal advisory logic ──
+// ── Seasonal advisory logic (dynamic, based on month) ───────────
 function getSeasonalAdvisory(): { crop: string; advisory: string; emoji: string } {
   const month = new Date().getMonth() // 0-indexed
   const seasonAdvisories: Record<number, { crop: string; advisory: string; emoji: string }> = {
     0: { crop: "বোরো ধান", advisory: "বোরো মৌসুমের চারা রোপণের উপযুক্ত সময়। সেচ ব্যবস্থা নিশ্চিত করুন।", emoji: "🌾" },
     1: { crop: "বোরো ধান ও গম", advisory: "সেচ দিন এবং সার প্রয়োগ করুন। ঠান্ডা থেকে চারা রক্ষা করুন।", emoji: "🌾" },
     2: { crop: "বোরো ধান ও সবজি", advisory: "সার প্রয়োগ ও পোকামাকড় পরিদর্শন করুন। বসন্তের সবজি লাগান।", emoji: "🥬" },
-    3: { crop: "অুস ধান", advisory: "অুস ধানের বীজ বপন শুরু করুন। জমি তৈরি ও সার প্রয়োগ করুন।", emoji: "🌱" },
-    4: { crop: "অুস ধান ও পাট", advisory: "অুস ধানের চারা রোপণ করুন। পাটের বীজ বপনের সময়।", emoji: "🪢" },
+    3: { crop: "ঔস ধান", advisory: "ঔস ধানের বীজ বপন শুরু করুন। জমি তৈরি ও সার প্রয়োগ করুন।", emoji: "🌱" },
+    4: { crop: "ঔস ধান ও পাট", advisory: "ঔস ধানের চারা রোপণ করুন। পাটের বীজ বপনের সময়।", emoji: "🪢" },
     5: { crop: "পাট ও সবজি", advisory: "পাটের যত্ন নিন। বর্ষার সবজি চাষ শুরু করুন।", emoji: "🪢" },
     6: { crop: "আমন ধান", advisory: "আমন ধানের বীজতলা তৈরি করুন। বর্ষায় নিষ্কাশন নিশ্চিত করুন।", emoji: "🌾" },
     7: { crop: "আমন ধান", advisory: "আমন ধানের চারা রোপণ করুন। পানি নিষ্কাশন ও সার ব্যবস্থা করুন।", emoji: "🌾" },
@@ -46,7 +48,7 @@ function getSeasonalAdvisory(): { crop: string; advisory: string; emoji: string 
   return seasonAdvisories[month] ?? seasonAdvisories[0]
 }
 
-// ── Quick access items ──
+// ── Quick access items (memoized outside component) ──
 const quickAccessItems = [
   { label: "চ্যাট", labelEn: "Chat", icon: MessageSquare, path: "/chat", color: "bg-green-100 text-green-700" },
   { label: "ফসল বিশ্লেষণ", labelEn: "Analyzer", icon: ScanSearch, path: "/analyzer", color: "bg-amber-100 text-amber-700" },
@@ -56,9 +58,42 @@ const quickAccessItems = [
   { label: "মাটি বিশ্লেষণ", labelEn: "Soil", icon: Layers, path: "/soil", color: "bg-earth-100 text-earth-700" },
 ]
 
+// ── Memoized Quick Access Card ──
+const QuickAccessCard = memo(function QuickAccessCard({
+  item,
+  language,
+  onClick,
+}: {
+  item: typeof quickAccessItems[number]
+  language: "bn" | "en"
+  onClick: () => void
+}) {
+  const Icon = item.icon
+  return (
+    <Card
+      className="cursor-pointer border-border/60 active:scale-[0.97]"
+      onClick={onClick}
+    >
+      <CardContent className="flex flex-col items-center gap-2 p-3">
+        <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${item.color}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <span className="text-center text-xs font-medium leading-tight text-foreground">
+          {language === "bn" ? item.label : item.labelEn}
+        </span>
+      </CardContent>
+    </Card>
+  )
+})
+
+// Helper
+function cn(...inputs: (string | false | null | undefined)[]) {
+  return inputs.filter(Boolean).join(" ")
+}
+
 export default function Home() {
   const navigate = useNavigate()
-  const { gps, upazila, requestGps } = useLocationStore()
+  const { gps, upazila, district, locationLabel, requestGps, isLocating } = useLocationStore()
   const { language, setLanguage, t } = useSettingsStore()
 
   // ── Weather query ──
@@ -72,49 +107,75 @@ export default function Home() {
     staleTime: 10 * 60 * 1000,
   })
 
-  // ── Market query ──
+  // ── Market query — uses user's district or default ──
+  const marketDistrict = district || MARKET_DEFAULT_DISTRICT
   const marketQuery = useQuery({
-    queryKey: ["market", "কুড়িগ্রাম"],
-    queryFn: () => getMarketPrices("কুড়িগ্রাম", "retail"),
+    queryKey: ["market", marketDistrict],
+    queryFn: () => getMarketPrices(marketDistrict, "retail"),
     staleTime: 30 * 60 * 1000,
   })
 
-  // Transform API weather data to WeatherStrip format
-  const stripWeather: StripWeatherData | null = weatherQuery.data
-    ? {
-        temperature: Math.round(weatherQuery.data.current.temperature2m),
-        humidity: weatherQuery.data.current.relativeHumidity2m,
-        windSpeed: Math.round(weatherQuery.data.current.windSpeed10m),
-        weatherCode: weatherQuery.data.current.weatherCode,
-        isDay: true,
-        precipitationChance: weatherQuery.data.daily.precipitationProbabilityMax[0] ?? 0,
-      }
-    : null
+  // Memoized weather strip data
+  const stripWeather: StripWeatherData | null = useMemo(() => {
+    if (!weatherQuery.data) return null
+    const d = weatherQuery.data
+    return {
+      temperature: Math.round(d.current.temperature2m),
+      humidity: d.current.relativeHumidity2m,
+      windSpeed: Math.round(d.current.windSpeed10m),
+      weatherCode: d.current.weatherCode,
+      isDay: true,
+      precipitationChance: d.daily.precipitationProbabilityMax[0] ?? 0,
+    }
+  }, [weatherQuery.data])
 
-  // Transform market data to MarketTicker format
-  const tickerCommodities: Commodity[] = marketQuery.data
-    ? marketQuery.data.commodities.slice(0, 5).map((c: CommodityPrice) => ({
-        nameBn: c.bengaliName,
-        nameEn: c.commodity,
-        price: c.avgPrice,
-        unit: c.unit,
-        change: c.change,
-      }))
-    : []
+  // Memoized market data
+  const tickerCommodities: Commodity[] = useMemo(() => {
+    if (!marketQuery.data) return []
+    return marketQuery.data.commodities.slice(0, 5).map((c: CommodityPrice) => ({
+      nameBn: c.bengaliName,
+      nameEn: c.commodity,
+      price: c.avgPrice,
+      unit: c.unit,
+      change: c.change,
+    }))
+  }, [marketQuery.data])
 
-  const seasonal = getSeasonalAdvisory()
+  const seasonal = useMemo(() => getSeasonalAdvisory(), [])
 
-  const handleRequestGps = async () => {
+  const handleRequestGps = useCallback(async () => {
     try {
       await requestGps()
     } catch {
       // Error handled within store
     }
-  }
+  }, [requestGps])
+
+  const handleWeatherClick = useCallback(() => navigate("/weather"), [navigate])
+  const handleCalendarClick = useCallback(() => navigate("/calendar"), [navigate])
+  const handleMarketClick = useCallback(() => navigate("/market"), [navigate])
+
+  // Current date in Bengali
+  const now = new Date()
+  const dateStr = `${BENGALI_DAYS[now.getDay()]}, ${toBengaliNumber(now.getDate())} ${BENGALI_MONTHS[now.getMonth()]}`
 
   return (
     <div className="space-y-5 p-4">
-      {/* ── GPS Prompt ── */}
+      {/* ── Location & Date Header ── */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <MapPin className={cn("h-4 w-4", gps ? "text-primary-600" : "text-muted-foreground")} />
+          <span className="text-sm font-medium text-foreground">
+            {locationLabel || (language === "bn" ? "অবস্থান নির্ণয় হচ্ছে..." : "Locating...")}
+          </span>
+        </div>
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Clock className="h-3 w-3" />
+          <span>{dateStr}</span>
+        </div>
+      </div>
+
+      {/* ── GPS Prompt (only if not located) ── */}
       {!gps && (
         <Card className="border-primary-200 bg-primary-50/60">
           <CardContent className="flex items-center gap-3 p-4">
@@ -131,13 +192,25 @@ export default function Home() {
                   : "To get local weather & advisories"}
               </p>
             </div>
-            <Button size="sm" onClick={handleRequestGps}>
+            <Button size="sm" onClick={handleRequestGps} disabled={isLocating}>
               <MapPin className="h-4 w-4" />
-              {language === "bn" ? "অনুমতি দিন" : "Allow"}
+              {isLocating
+                ? (language === "bn" ? "খুঁজছি..." : "Locating...")
+                : (language === "bn" ? "অনুমতি দিন" : "Allow")}
             </Button>
           </CardContent>
         </Card>
       )}
+
+      {/* ── Map Card (deferred — only renders when GPS available) ── */}
+      <section>
+        <LocationMap height={180} zoom={12} showWithoutGps={false} />
+        {locationLabel && (
+          <p className="mt-1 text-center text-xs text-muted-foreground">
+            {locationLabel}
+          </p>
+        )}
+      </section>
 
       {/* ── Weather Strip ── */}
       <section>
@@ -147,7 +220,7 @@ export default function Home() {
         {weatherQuery.isLoading ? (
           <Skeleton className="h-28 w-full rounded-xl" />
         ) : stripWeather ? (
-          <div className="cursor-pointer" onClick={() => navigate("/weather")} role="button" tabIndex={0}>
+          <div className="cursor-pointer" onClick={handleWeatherClick} role="button" tabIndex={0}>
             <WeatherStrip weather={stripWeather} />
           </div>
         ) : (
@@ -176,8 +249,8 @@ export default function Home() {
         {marketQuery.data && (
           <div className="mt-1 text-right">
             <button
-              onClick={() => navigate("/market")}
-              className="text-xs font-medium text-primary-600 hover:text-primary-800"
+              onClick={handleMarketClick}
+              className="text-xs font-medium text-primary-600 active:text-primary-800"
             >
               {language === "bn" ? "সব দাম দেখুন" : "View all prices"} →
             </button>
@@ -191,25 +264,14 @@ export default function Home() {
           {language === "bn" ? "দ্রুত অ্যাক্সেস" : "Quick Access"}
         </h2>
         <div className="grid grid-cols-3 gap-3">
-          {quickAccessItems.map((item) => {
-            const Icon = item.icon
-            return (
-              <Card
-                key={item.path}
-                className="cursor-pointer border-border/60 transition-all duration-200 hover:border-primary-300 hover:shadow-md active:scale-[0.97]"
-                onClick={() => navigate(item.path)}
-              >
-                <CardContent className="flex flex-col items-center gap-2 p-3">
-                  <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${item.color}`}>
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <span className="text-center text-xs font-medium leading-tight text-foreground">
-                    {language === "bn" ? item.label : item.labelEn}
-                  </span>
-                </CardContent>
-              </Card>
-            )
-          })}
+          {quickAccessItems.map((item) => (
+            <QuickAccessCard
+              key={item.path}
+              item={item}
+              language={language}
+              onClick={() => navigate(item.path)}
+            />
+          ))}
         </div>
       </section>
 
@@ -237,8 +299,8 @@ export default function Home() {
               </div>
             </div>
             <button
-              onClick={() => navigate("/calendar")}
-              className="mt-3 flex w-full items-center justify-center gap-1 rounded-lg border border-green-200 bg-white py-2 text-sm font-medium text-green-700 transition-colors hover:bg-green-50"
+              onClick={handleCalendarClick}
+              className="mt-3 flex w-full items-center justify-center gap-1 rounded-lg border border-green-200 bg-white py-2 text-sm font-medium text-green-700 active:bg-green-50"
             >
               {language === "bn" ? "কৃষি ক্যালেন্ডার দেখুন" : "View Agri Calendar"}
               <ChevronRight className="h-4 w-4" />
@@ -247,11 +309,11 @@ export default function Home() {
         </Card>
       </section>
 
-      {/* ── Location Info ── */}
-      {upazila && (
+      {/* ── Location Footer ── */}
+      {locationLabel && (
         <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
           <MapPin className="h-3 w-3" />
-          <span>{upazila}, {language === "bn" ? "কুড়িগ্রাম" : "Kurigram"}</span>
+          <span>{locationLabel}</span>
         </div>
       )}
     </div>

@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, memo } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { Sprout, Globe, MapPin, ChevronDown } from "lucide-react"
 import { Navbar } from "./Navbar"
 import { useSettingsStore } from "@/store/useSettingsStore"
+import { useLocationStore } from "@/store/useLocationStore"
 
 const moreMenuItems = [
   { label: "Analyzer", labelBn: "বিশ্লেষক", path: "/analyzer", emoji: "🔬" },
@@ -12,64 +13,59 @@ const moreMenuItems = [
   { label: "Profile", labelBn: "প্রোফাইল", path: "/profile", emoji: "👤" },
 ]
 
-interface LanguageToggleProps {
+// ── Memoized sub-components to prevent unnecessary re-renders ─────
+
+const LanguageToggle = memo(function LanguageToggle({ lang, onToggle }: {
   lang: "bn" | "en"
   onToggle: () => void
-}
-
-function LanguageToggle({ lang, onToggle }: LanguageToggleProps) {
+}) {
   return (
     <button
       onClick={onToggle}
-      className="flex items-center gap-1 rounded-full border border-border bg-white px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm transition-colors hover:bg-primary-50 hover:text-primary-700 hover:border-primary-300"
+      className="flex items-center gap-1 rounded-full border border-border bg-white px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm active:bg-primary-50 active:text-primary-700"
       aria-label="Toggle language"
     >
       <Globe className="h-3.5 w-3.5" />
       <span>{lang === "bn" ? "বাং" : "EN"}</span>
     </button>
   )
-}
+})
 
-function GPSIndicator() {
-  const [gpsStatus, setGpsStatus] = useState<"loading" | "active" | "error">("loading")
+/**
+ * GPSIndicator — Uses useLocationStore instead of making
+ * a separate geolocation call (which was redundant and slow).
+ * Now reads from the already-initialized location store.
+ */
+const GPSIndicator = memo(function GPSIndicator() {
+  const { gps, isLocating, locationError } = useLocationStore()
 
-  useEffect(() => {
-    if (!navigator.geolocation) {
-      setGpsStatus("error")
-      return
-    }
-    navigator.geolocation.getCurrentPosition(
-      () => setGpsStatus("active"),
-      () => setGpsStatus("error"),
-      { timeout: 5000 }
-    )
-  }, [])
+  const status = gps ? "active" : locationError ? "error" : isLocating ? "loading" : "loading"
 
   return (
     <div className="flex items-center gap-1 text-xs">
       <MapPin
         className={`h-3.5 w-3.5 ${
-          gpsStatus === "active"
+          status === "active"
             ? "text-primary-600"
-            : gpsStatus === "error"
+            : status === "error"
             ? "text-red-400"
             : "text-gray-400 animate-pulse"
         }`}
       />
       <span
         className={
-          gpsStatus === "active"
+          status === "active"
             ? "text-primary-600"
-            : gpsStatus === "error"
+            : status === "error"
             ? "text-red-400"
             : "text-gray-400"
         }
       >
-        {gpsStatus === "active" ? "GPS" : gpsStatus === "error" ? "—" : "..."}
+        {status === "active" ? "GPS" : status === "error" ? "—" : "..."}
       </span>
     </div>
   )
-}
+})
 
 interface LayoutProps {
   children: React.ReactNode
@@ -107,13 +103,13 @@ export default function Layout({ children }: LayoutProps) {
   return (
     <div className="flex min-h-screen flex-col bg-background font-bengali">
       {/* ── Top Header ── */}
-      <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-white/95 px-4 backdrop-blur-md">
+      <header className="sticky top-0 z-40 flex h-12 items-center justify-between border-b border-border bg-white px-4">
         {/* Logo & App Name */}
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 shadow-sm">
-            <Sprout className="h-5 w-5 text-white" />
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-600 shadow-sm">
+            <Sprout className="h-4 w-4 text-white" />
           </div>
-          <h1 className="text-lg font-bold text-foreground tracking-tight">
+          <h1 className="text-base font-bold text-foreground tracking-tight">
             কৃষি <span className="text-primary-600">AI</span>
           </h1>
         </div>
@@ -129,7 +125,7 @@ export default function Layout({ children }: LayoutProps) {
       </header>
 
       {/* ── Main Content ── */}
-      <main className="flex-1 overflow-y-auto pb-20">
+      <main className="flex-1 overflow-y-auto pb-18">
         {children}
       </main>
 
@@ -138,13 +134,13 @@ export default function Layout({ children }: LayoutProps) {
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm transition-opacity"
+            className="fixed inset-0 z-40 bg-black/20"
             onClick={() => setShowMoreMenu(false)}
             aria-hidden="true"
           />
           {/* Menu Panel */}
-          <div className="fixed bottom-20 left-0 right-0 z-50 mx-auto max-w-lg">
-            <div className="mx-4 mb-2 overflow-hidden rounded-2xl border border-border bg-white shadow-xl animate-in slide-in-from-bottom-4 duration-200">
+          <div className="fixed bottom-16 left-0 right-0 z-50 mx-auto max-w-lg">
+            <div className="mx-4 mb-2 overflow-hidden rounded-2xl border border-border bg-white shadow-xl">
               <div className="px-4 pt-3 pb-2">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-foreground">
@@ -152,7 +148,7 @@ export default function Layout({ children }: LayoutProps) {
                   </h3>
                   <button
                     onClick={() => setShowMoreMenu(false)}
-                    className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                    className="rounded-full p-1 text-gray-400 active:bg-gray-100 active:text-gray-600"
                     aria-label="Close menu"
                   >
                     <ChevronDown className="h-4 w-4" />
@@ -166,10 +162,10 @@ export default function Layout({ children }: LayoutProps) {
                     <button
                       key={item.path}
                       onClick={() => handleMoreNavigate(item.path)}
-                      className={`flex flex-col items-center gap-1.5 rounded-xl px-2 py-3 text-xs transition-all duration-200 ${
+                      className={`flex flex-col items-center gap-1.5 rounded-xl px-2 py-3 text-xs ${
                         isActive
                           ? "bg-primary-50 text-primary-700 font-semibold"
-                          : "text-gray-600 hover:bg-primary-50/50 hover:text-primary-700"
+                          : "text-gray-600 active:bg-primary-50/50"
                       }`}
                     >
                       <div

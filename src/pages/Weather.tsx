@@ -10,22 +10,210 @@ import {
   Leaf,
   CloudDrizzle,
   Flame,
+  Bug,
+  ShieldAlert,
+  FlaskConical,
+  Clock,
+  MapPin,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { WeatherStrip } from "@/components/WeatherStrip"
+import LocationMap from "@/components/LocationMap"
 import { useLocationStore } from "@/store/useLocationStore"
 import { useSettingsStore } from "@/store/useSettingsStore"
 import { getWeather, getAgAdvisory, type WeatherData as ApiWeatherData } from "@/services/weatherService"
 import { toBengaliNumber, BENGALI_DAYS, BENGALI_MONTHS } from "@/lib/bengali"
 import { WEATHER_CODES } from "@/lib/constants"
+import { PEST_RISK_THRESHOLDS, SPRAY_ADVICE } from "@/lib/appConfig"
 import { cn } from "@/lib/utils"
 import type { WeatherData as StripWeatherData } from "@/components/WeatherStrip"
 
+// ── Pest & Disease Risk Calculator ──────────────────────────────
+
+interface PestRisk {
+  id: string
+  nameBn: string
+  nameEn: string
+  risk: "high" | "medium" | "low"
+  cause: string
+  affectedCrops: string
+}
+
+function calculatePestRisks(weather: ApiWeatherData): PestRisk[] {
+  const risks: PestRisk[] = []
+  const humidity = weather.current.relativeHumidity2m
+  const temp = weather.current.temperature2m
+  const windSpeed = weather.current.windSpeed10m
+  const rainProb = weather.daily.precipitationProbabilityMax[0] ?? 0
+  const precip = weather.daily.precipitationSum[0] ?? 0
+
+  // Fungal diseases (high humidity)
+  if (humidity > PEST_RISK_THRESHOLDS.humidityHigh) {
+    risks.push({
+      id: "blast",
+      nameBn: "ধানের ব্লাস্ট রোগ",
+      nameEn: "Rice Blast",
+      risk: "high",
+      cause: `আর্দ্রতা ${toBengaliNumber(humidity)}% — ছত্রাকের অনুকূল পরিবেশ`,
+      affectedCrops: "ধান (আমন, বোরো)",
+    })
+    risks.push({
+      id: "brown_spot",
+      nameBn: "বাদামি দাগ রোগ",
+      nameEn: "Brown Spot",
+      risk: "medium",
+      cause: `উচ্চ আর্দ্রতা ও পাতার ভেজা অবস্থা`,
+      affectedCrops: "ধান",
+    })
+    risks.push({
+      id: "sheath_blight",
+      nameBn: "খোল পোড়া রোগ",
+      nameEn: "Sheath Blight",
+      risk: humidity > 90 ? "high" : "medium",
+      cause: `আর্দ্রতা ও উষ্ণ তাপমাত্রা`,
+      affectedCrops: "ধান, ভুট্টা",
+    })
+  } else if (humidity > PEST_RISK_THRESHOLDS.humidityMedium) {
+    risks.push({
+      id: "blast_mild",
+      nameBn: "হালকা ব্লাস্ট ঝুঁকি",
+      nameEn: "Mild Blast Risk",
+      risk: "low",
+      cause: `আর্দ্রতা মাঝারি (${toBengaliNumber(humidity)}%)`,
+      affectedCrops: "ধান",
+    })
+  }
+
+  // Insect pests (high temperature + moderate humidity)
+  if (temp > PEST_RISK_THRESHOLDS.tempHigh) {
+    risks.push({
+      id: "bph",
+      nameBn: "বাদামি গাছফড়িং",
+      nameEn: "Brown Plant Hopper",
+      risk: "high",
+      cause: `উচ্চ তাপমাত্রা (${toBengaliNumber(Math.round(temp))}°C) ও আর্দ্রতা`,
+      affectedCrops: "ধান",
+    })
+    risks.push({
+      id: "stem_borer",
+      nameBn: " ডাঁট ছিদ্রকারী পোকা",
+      nameEn: "Stem Borer",
+      risk: "medium",
+      cause: `উষ্ণ আবহাওয়ায় সক্রিয়`,
+      affectedCrops: "ধান, পাট",
+    })
+  }
+
+  // Aphid risk (moderate temp, low rain)
+  if (temp > 20 && temp < 35 && precip < 5) {
+    risks.push({
+      id: "aphid",
+      nameBn: "মাজরা/এফিড",
+      nameEn: "Aphid / Jassid",
+      risk: "medium",
+      cause: `শুষ্ক ও উষ্ণ আবহাওয়া`,
+      affectedCrops: "সবজি, ডাল, তুলা",
+    })
+  }
+
+  // Cold damage
+  if (temp < PEST_RISK_THRESHOLDS.tempLow) {
+    risks.push({
+      id: "cold_injury",
+      nameBn: "শীতজনিত ক্ষতি",
+      nameEn: "Cold Injury",
+      risk: temp < 5 ? "high" : "medium",
+      cause: `নিম্ন তাপমাত্রা (${toBengaliNumber(Math.round(temp))}°C)`,
+      affectedCrops: "বোরো ধান (চারা), সবজি",
+    })
+  }
+
+  return risks
+}
+
+// ── Spray Advice Calculator ─────────────────────────────────────
+
+interface SprayAdviceItem {
+  id: string
+  type: "avoid" | "recommended" | "timing" | "preventive"
+  message: string
+  messageEn: string
+  icon: typeof ShieldAlert
+}
+
+function calculateSprayAdvice(weather: ApiWeatherData): SprayAdviceItem[] {
+  const advice: SprayAdviceItem[] = []
+  const windSpeed = weather.current.windSpeed10m
+  const rainProb = weather.daily.precipitationProbabilityMax[0] ?? 0
+  const precip = weather.daily.precipitationSum[0] ?? 0
+  const humidity = weather.current.relativeHumidity2m
+  const temp = weather.current.temperature2m
+
+  // Wind too high for spraying
+  if (windSpeed > PEST_RISK_THRESHOLDS.windHigh) {
+    advice.push({
+      id: "wind",
+      type: "avoid",
+      message: SPRAY_ADVICE.windTooHigh.bn,
+      messageEn: SPRAY_ADVICE.windTooHigh.en,
+      icon: Wind,
+    })
+  }
+
+  // Rain expected — wash-off risk
+  if (rainProb > PEST_RISK_THRESHOLDS.rainProbHigh || precip > PEST_RISK_THRESHOLDS.rainHeavy) {
+    advice.push({
+      id: "rain",
+      type: "avoid",
+      message: SPRAY_ADVICE.rainExpected.bn,
+      messageEn: SPRAY_ADVICE.rainExpected.en,
+      icon: CloudRain,
+    })
+  }
+
+  // Fungal risk — preventive fungicide
+  if (humidity > PEST_RISK_THRESHOLDS.humidityHigh) {
+    advice.push({
+      id: "fungicide",
+      type: "preventive",
+      message: SPRAY_ADVICE.fungalRisk.bn,
+      messageEn: SPRAY_ADVICE.fungalRisk.en,
+      icon: FlaskConical,
+    })
+  }
+
+  // Heat stress — spray in evening
+  if (temp > PEST_RISK_THRESHOLDS.tempHigh) {
+    advice.push({
+      id: "heat",
+      type: "timing",
+      message: SPRAY_ADVICE.heatStress.bn,
+      messageEn: SPRAY_ADVICE.heatStress.en,
+      icon: Thermometer,
+    })
+  }
+
+  // Best time to spray (always show if conditions are ok)
+  if (windSpeed < PEST_RISK_THRESHOLDS.windHigh && rainProb < PEST_RISK_THRESHOLDS.rainProbHigh) {
+    advice.push({
+      id: "timing",
+      type: "recommended",
+      message: SPRAY_ADVICE.bestTime.bn,
+      messageEn: SPRAY_ADVICE.bestTime.en,
+      icon: Clock,
+    })
+  }
+
+  return advice
+}
+
+// ── Weather Page ────────────────────────────────────────────────
+
 export default function Weather() {
-  const { gps, requestGps } = useLocationStore()
+  const { gps, upazila, district, locationLabel, requestGps } = useLocationStore()
   const { language, t } = useSettingsStore()
 
   // ── Weather query ──
@@ -55,6 +243,12 @@ export default function Weather() {
 
   // Agricultural advisory
   const advisory = weather ? getAgAdvisory(weather) : null
+
+  // Pest & disease risks
+  const pestRisks = weather ? calculatePestRisks(weather) : []
+
+  // Spray advice
+  const sprayAdvice = weather ? calculateSprayAdvice(weather) : []
 
   // Rain alert check
   const hasRainAlert = weather
@@ -89,12 +283,17 @@ export default function Weather() {
   // VPD calculation
   const vpd = weather
     ? (() => {
-        const t = weather.current.temperature2m
+        const temp = weather.current.temperature2m
         const rh = weather.current.relativeHumidity2m / 100
-        const svp = 0.6108 * Math.exp((17.27 * t) / (t + 237.3))
+        const svp = 0.6108 * Math.exp((17.27 * temp) / (temp + 237.3))
         return svp * (1 - rh)
       })()
     : null
+
+  // Current date/time in Bengali
+  const now = new Date()
+  const currentDateBn = `${BENGALI_DAYS[now.getDay()]}, ${toBengaliNumber(now.getDate())} ${BENGALI_MONTHS[now.getMonth()]} ${toBengaliNumber(now.getFullYear())}`
+  const currentTimeBn = `${toBengaliNumber(now.getHours())}:${toBengaliNumber(parseInt(String(now.getMinutes()).padStart(2, "0")))}`
 
   if (!gps) {
     return (
@@ -115,6 +314,27 @@ export default function Weather() {
 
   return (
     <div className="space-y-5 p-4">
+      {/* ── Real-Time Date & Location Header ── */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-muted-foreground">
+            {currentDateBn} • {currentTimeBn}
+          </p>
+          {locationLabel && (
+            <div className="flex items-center gap-1 mt-0.5">
+              <MapPin className="h-3 w-3 text-primary-600" />
+              <span className="text-xs font-medium text-primary-700">{locationLabel}</span>
+            </div>
+          )}
+        </div>
+        <Badge variant="outline" className="text-[10px]">
+          {language === "bn" ? "সরাসরি" : "Live"}
+        </Badge>
+      </div>
+
+      {/* ── Map ── */}
+      <LocationMap height={180} zoom={11} />
+
       {/* ── Rain Alert Banner ── */}
       {hasRainAlert && (
         <div className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
@@ -299,7 +519,7 @@ export default function Weather() {
               </Card>
             )}
 
-            {/* ET₀ Irrigation Advisory */}
+            {/* ET0 Irrigation Advisory */}
             <Card className={cn(needsIrrigation ? "border-orange-200 bg-orange-50/50" : "border-green-200 bg-green-50/50")}>
               <CardContent className="flex items-center gap-3 p-3">
                 <div className={cn(
@@ -405,6 +625,92 @@ export default function Weather() {
               </Card>
             )}
           </div>
+        </section>
+      )}
+
+      {/* ── Pest & Disease Risk Section ── */}
+      {pestRisks.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            {language === "bn" ? "কীটপতঙ্গ ও রোগের ঝুঁকি" : "Pest & Disease Risk"}
+          </h2>
+          <div className="space-y-2">
+            {pestRisks.map((risk) => {
+              const riskColor = risk.risk === "high" ? "red" : risk.risk === "medium" ? "yellow" : "green"
+              return (
+                <Card key={risk.id} className={cn(
+                  risk.risk === "high" ? "border-red-200 bg-red-50/30" :
+                  risk.risk === "medium" ? "border-yellow-200 bg-yellow-50/30" :
+                  "border-green-200 bg-green-50/30"
+                )}>
+                  <CardContent className="flex items-start gap-3 p-3">
+                    <div className={cn(
+                      "flex h-9 w-9 items-center justify-center rounded-lg shrink-0",
+                      risk.risk === "high" ? "bg-red-100 text-red-600" :
+                      risk.risk === "medium" ? "bg-yellow-100 text-yellow-600" :
+                      "bg-green-100 text-green-600"
+                    )}>
+                      <Bug className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-foreground">
+                          {language === "bn" ? risk.nameBn : risk.nameEn}
+                        </span>
+                        <Badge className={cn(
+                          "text-[9px] px-1.5 py-0 border-0",
+                          risk.risk === "high" ? "bg-red-100 text-red-800" :
+                          risk.risk === "medium" ? "bg-yellow-100 text-yellow-800" :
+                          "bg-green-100 text-green-800"
+                        )}>
+                          {risk.risk === "high"
+                            ? (language === "bn" ? "উচ্চ" : "High")
+                            : risk.risk === "medium"
+                            ? (language === "bn" ? "মাঝারি" : "Medium")
+                            : (language === "bn" ? "নিম্ন" : "Low")}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">{risk.cause}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        {language === "bn" ? "আক্রান্ত ফসল" : "Affected crops"}: {risk.affectedCrops}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ── Spray Advice Section ── */}
+      {sprayAdvice.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            {language === "bn" ? "স্প্রে পরামর্শ" : "Spray Advice"}
+          </h2>
+          <Card className="border-blue-200 bg-gradient-to-br from-blue-50 to-white">
+            <CardContent className="p-3 space-y-2">
+              {sprayAdvice.map((item) => {
+                const Icon = item.icon
+                const typeColor =
+                  item.type === "avoid" ? "text-red-600 bg-red-100" :
+                  item.type === "recommended" ? "text-green-600 bg-green-100" :
+                  item.type === "preventive" ? "text-blue-600 bg-blue-100" :
+                  "text-amber-600 bg-amber-100"
+                return (
+                  <div key={item.id} className="flex items-start gap-2.5">
+                    <div className={cn("flex h-7 w-7 items-center justify-center rounded-lg shrink-0", typeColor)}>
+                      <Icon className="h-3.5 w-3.5" />
+                    </div>
+                    <p className="text-xs leading-relaxed text-foreground">
+                      {language === "bn" ? item.message : item.messageEn}
+                    </p>
+                  </div>
+                )
+              })}
+            </CardContent>
+          </Card>
         </section>
       )}
 
